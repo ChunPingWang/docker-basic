@@ -1,172 +1,293 @@
 ---
-title: 'Docker網路工作坊'
+title: 'Docker 網路工作坊'
 disqus: hackmd
 ---
 
-Docker網路工作坊
-===
-![downloads](https://img.shields.io/github/downloads/atom/atom/total.svg)
-![build](https://img.shields.io/appveyor/ci/:user/:repo.svg)
-![chat](https://img.shields.io/discord/:serverId.svg)
+# Docker 網路工作坊
 
-## Table of Contents
+> 一份從零開始學習 Docker 網路的實作教材。本工作坊會帶你動手體驗 Docker 的四種網路模式,並進一步認識 Linux network namespace 與 veth 的運作方式。
 
-[TOC]
+## 目錄
 
+- [學習目標](#學習目標)
+- [先備知識](#先備知識)
+- [環境需求](#環境需求)
+- [專案結構](#專案結構)
+- [快速開始](#快速開始)
+- [背景知識:Docker 的四種網路模式](#背景知識docker-的四種網路模式)
+- [Lab 1 — none 模式](#lab-1--none-模式)
+- [Lab 2 — host 模式](#lab-2--host-模式)
+- [Lab 3 — bridge 模式](#lab-3--bridge-模式)
+- [Lab 4 — container 模式(共享網路)](#lab-4--container-模式共享網路)
+- [Lab 5 — 自己動手做 veth pair](#lab-5--自己動手做-veth-pair)
+- [常用指令速查](#常用指令速查)
+- [常見問題 FAQ](#常見問題-faq)
 
-## Network Labs
-> Docker有四種網路模式: none、bridge、host
-### 準備工作
-> Dockerfile(Dockerfile-ubuntu-network)
-```gherkin=
-FROM ubuntu:22.04
+---
 
-RUN apt-get update && \
-    apt-get -y net-tools
+## 學習目標
+
+完成這份工作坊後,你應該能夠:
+
+1. 說出 Docker 四種網路模式(`none`、`host`、`bridge`、`container`)的差異與使用時機。
+2. 用 `docker inspect`、`ip addr`、`lsns` 等指令觀察容器的網路設定。
+3. 理解 Linux **network namespace** 是什麼,以及容器為什麼能擁有獨立的網路堆疊。
+4. 親手用 `ip netns` 與 `veth pair` 建立兩個獨立 namespace 之間的虛擬連線。
+
+## 先備知識
+
+- 會用 terminal 下基本指令(`cd`、`ls`、`cat`)。
+- 知道 Docker 是什麼,並做過 `docker run hello-world`。
+- **不需要**懂 Linux kernel,也**不需要**寫過網路程式。
+
+## 環境需求
+
+| 項目 | 版本 / 說明 |
+|---|---|
+| 作業系統 | Linux(建議 Ubuntu 22.04 以上)。macOS / Windows 上的 Docker Desktop 因為跑在 VM 裡,Lab 2 與 Lab 5 行為會不同 |
+| Docker | 20.10 以上 |
+| 權限 | 能執行 `docker` 指令(已加入 `docker` group,或用 `sudo`)。Lab 5 需要 `sudo` |
+| 工具 | `bash`、`jq`(用於解析 JSON 輸出) |
+
+確認環境:
+
+```bash
+docker --version
+jq --version
 ```
-> 以 Dockerfile 建立鏡像
-```gherkin=
-docker build -f Dockerfile-ubuntu-network -t ubuntu-network .
+
+## 專案結構
+
 ```
-> 在 Host 上查看網路狀態
-```gherkin=
-sudo lsns -t net
+.
+├── Dockerfile-ubuntu-network   # 帶有網路工具的 Ubuntu 映像檔定義
+├── build.sh                    # 建立映像檔
+├── lab1-none.sh                # Lab 1: none 模式
+├── lab2-host.sh                # Lab 2: host 模式
+├── lab3-bridge.sh              # Lab 3: bridge 模式
+├── lab4-container.sh           # Lab 4: container 模式(需傳入目標 ID)
+├── lab5-veth.sh                # Lab 5: 手動建立 veth pair(需 sudo)
+└── README.md                   # 本文件
 ```
 
-### Lab1 - none(--network=none)
-> 啟動一個名為ubuntu-network的容器後，並以 -it 登入容器的shell，--rm 代表登出後自動刪除
-> --network=none 表示不設定網路
-```gherkin=
-docker container run -it --rm --network=none ubuntu-network
+## 快速開始
+
+```bash
+# 1. 建立練習用的映像檔(只需做一次)
+./build.sh
+
+# 2. 依序執行各個 Lab
+./lab1-none.sh
+./lab2-host.sh
+./lab3-bridge.sh
+
+# Lab 4 需要先在另一個 terminal 執行 lab3,
+# 然後用 `docker ps` 取得它的 container id 再傳入:
+./lab4-container.sh <container_id>
+
+# Lab 5 需要 root 權限
+sudo ./lab5-veth.sh
 ```
-> 查看啟動中的 container
-![截圖 2025-03-24 凌晨12.22.02](https://hackmd.io/_uploads/SJ4irha2ye.png)
-> 登入 container 的 shell 
-![截圖 2025-03-24 凌晨12.22.17](https://hackmd.io/_uploads/B10jS2a3ye.png)
 
-> 皆顯示一樣的 container id
+> 💡 **小提醒**:每個 Lab 容器都加了 `--rm`,所以你只要在容器內 `exit`,容器就會自動刪除,不會留下殘留。
 
-> 在Host 上 查看網路設定
- 
-```gherkin=
-docker container inspect --format='{{ json .NetworkSettings}}'  35457f6c29b2 | jq
+---
+
+## 背景知識:Docker 的四種網路模式
+
+容器其實是一個**共享 host 核心、但擁有自己 namespace 的程序**。網路 namespace 讓每個容器可以擁有自己的網卡、路由表、iptables 規則。Docker 在這個基礎上,提供了四種常用的網路模式:
+
+| 模式 | 行為 | 適合場景 |
+|---|---|---|
+| `none` | 只有 `lo`,沒有對外網路 | 安全沙箱、純運算工作 |
+| `host` | 直接共用 host 的網路 namespace,沒有隔離 | 對效能極度敏感、需要監聽 host port 的工具 |
+| `bridge` | 預設模式。Docker 建立一張虛擬橋接 `docker0`,容器透過 NAT 連外 | 大多數應用、一般 web 服務 |
+| `container:<id>` | 與另一個容器共用同一個網路 namespace | sidecar 模式、debug、Pod 概念的雛形 |
+
+接下來我們會一個一個動手玩。
+
+---
+
+## Lab 1 — none 模式
+
+**目標**:看到一個「沒有網路」的容器長什麼樣子。
+
+```bash
+./lab1-none.sh
+# 等同於:docker container run -it --rm --network=none ubuntu-network
 ```
-![截圖 2025-03-24 凌晨12.28.54](https://hackmd.io/_uploads/ryqBw2pnkg.png)
-> 可觀察三個重點
-> 1. 35457f6c29b2 為 Container ID，每次啟動可能會有所不同，請更換實際請動後的 Container ID
-> 2. none 表示沒有設定網路模式
-> 3. 沒有 IPAddress 
 
-### Lab2 - Host(--network=host)
-> --network=host 表示網路設定成 HOST 模式
-```gherkin=
-docker container run -it --rm --network=host ubuntu-network
+進入容器後,試試:
+
+```bash
+ip addr        # 應該只看到 lo (loopback)
+ping 8.8.8.8   # 應該完全失敗
 ```
-> 查看Container的 ip 為 192.168.102.128(依照每台HOST的實際使用 ip，可能會有所不同 )
-![image](https://hackmd.io/_uploads/B1Nu1dA2kx.png)
-> 查看 Container 以 HOST 的網路模式啟動
-![image](https://hackmd.io/_uploads/Hypre_R2Je.png)
-> Container的 ip 與 HOST 主機的 ip 一樣
-![image](https://hackmd.io/_uploads/BJDbZdRhJl.png)
 
-### Lab3 - Bridge(--network=bridge)
+開另一個 terminal,用以下指令觀察 host 上 Docker 對這個容器的看法:
 
-> --network=bridge 表示網路設定成 BRIDGE 模式
-```gherkin=
-docker container run -it --rm --network=bridge ubuntu-network
+```bash
+docker ps                                    # 找到 container id
+docker container inspect --format='{{ json .NetworkSettings }}' <container_id> | jq
 ```
-![image](https://hackmd.io/_uploads/SkQoJ80h1e.png)
 
+**你應該看到**:`Networks` 是空的、`IPAddress` 是空字串。這就是 `none` 模式的意思 — Docker 幫你建了一個全新的 net namespace,但**什麼網卡都沒有插進去**。
 
-### Lab4 Container (--network=container:[container_id])
-> 以 Lab3(Bridge)的網路模式啟動一個容器
-![截圖 2025-04-06 下午3.29.33](https://hackmd.io/_uploads/Bycv6oyCJe.png)
+---
 
-> 查詢 container id 
-> 再啟動一個 Container的網路模式
-```gherkin=
-docker container run -it --rm --network=container:c3bbf1df85f1 ubuntu-network
-# c3bbf1df85f1 為Lab3 的 container id，請改成你電腦裡的 container id
+## Lab 2 — host 模式
+
+**目標**:看到一個「沒有網路隔離」的容器。
+
+```bash
+./lab2-host.sh
 ```
-![截圖 2025-04-06 下午3.28.56](https://hackmd.io/_uploads/ByUSps1R1l.png)
 
-> 在Container裡執行下列指令
-```gherkin=
+進入容器後:
+
+```bash
+ip addr   # 看到的網卡跟 host 完全一樣
+hostname  # 仍然是容器自己的 hostname(其他 namespace 還是有隔離)
+```
+
+用 `ifconfig` 在 host 與容器內各執行一次,你會發現 IP 一模一樣。容器**沒有自己的 network namespace**,直接共用 host 的。
+
+> ⚠️ **macOS / Windows 注意**:Docker Desktop 把 Docker 跑在 Linux VM 裡,所以 host 模式的「host」指的是 VM 不是你的 Mac。
+> ⚠️ **安全提醒**:host 模式等於把容器的 process 直接放進你的網路堆疊,失去了一層隔離,正式環境要謹慎使用。
+
+---
+
+## Lab 3 — bridge 模式
+
+**目標**:認識 Docker 預設的網路模式。
+
+```bash
+./lab3-bridge.sh
+```
+
+進入容器後:
+
+```bash
+ip addr   # 看到 eth0 拿到一個 172.17.x.x 的 IP
+ping 8.8.8.8   # 應該成功
+```
+
+在 host 執行:
+
+```bash
+ip addr show docker0   # docker0 就是那座「橋」
+```
+
+**運作原理**:Docker daemon 啟動時建立了一個叫 `docker0` 的虛擬交換器。每個 bridge 模式的容器都會被插上一根虛擬網路線(veth pair)的一端,另一端接到 `docker0`。對外的流量再透過 iptables 做 NAT 出去。Lab 5 我們會自己動手做一遍這個概念。
+
+---
+
+## Lab 4 — container 模式(共享網路)
+
+**目標**:讓兩個容器**共用同一張網卡**,理解 Kubernetes Pod 的雛形。
+
+步驟:
+
+1. 開 terminal A,啟動 Lab 3 的 bridge 容器並**保持不退出**:
+   ```bash
+   ./lab3-bridge.sh
+   ```
+2. 開 terminal B,查它的 container id:
+   ```bash
+   docker ps
+   ```
+3. 仍在 terminal B,用該 id 啟動第二個容器:
+   ```bash
+   ./lab4-container.sh <container_id>
+   ```
+
+在第二個容器內執行 `ip addr`,你會發現它的 IP **與第一個容器一模一樣**。
+
+進一步驗證:
+
+```bash
+# 在兩個容器內分別執行
+lsns
+```
+
+兩邊的 **net namespace id 應該相同**,但其他 namespace(pid、mnt 等)是不同的。這代表它們共用網路堆疊,但其他資源仍然隔離 — 這就是 Kubernetes 的 Pod 把多個 container 「綁」在一起的方式。
+
+**有趣的實驗**:把第一個容器(terminal A)`exit` 掉,因為它是「網路擁有者」,第二個容器就會瞬間失去網路。
+
+---
+
+## Lab 5 — 自己動手做 veth pair
+
+**目標**:不靠 Docker,純粹用 Linux 指令把 Lab 3 那個「兩端虛擬網路線」做出來。看完這個 Lab,你會徹底懂 bridge 模式背後在幹什麼。
+
+```bash
+sudo ./lab5-veth.sh
+```
+
+腳本會做這些事:
+
+1. 建立兩個 network namespace `ns0`、`ns1`(像是兩個迷你容器)。
+2. 建立一對 veth(`veth0` ↔ `veth1`),這是一條虛擬網路線,兩端不能分開。
+3. 把 `veth0` 丟進 `ns0`,`veth1` 丟進 `ns1`。
+4. 在兩端各設一個 IP(`172.18.0.2` 與 `172.18.0.3`),把介面 up 起來。
+
+驗證連通性:
+
+```bash
+sudo ip netns exec ns0 ping -c 3 172.18.0.3
+```
+
+清理(腳本不會自動刪 namespace,讓你有時間觀察):
+
+```bash
+sudo ip netns del ns0
+sudo ip netns del ns1
+```
+
+**觀念連結**:Docker 的 bridge 模式就是把這個流程自動化 — 它把其中一端塞進容器的 net namespace,另一端接到 `docker0` 上。理解這個 Lab 後,Docker 網路就不再是黑盒子了。
+
+---
+
+## 常用指令速查
+
+```bash
+# 看所有 namespace
+sudo lsns
+sudo lsns -t net          # 只看 network namespace
+
+# 看容器網路設定
+docker container inspect --format='{{ json .NetworkSettings }}' <id> | jq
+
+# 看 host 上的 docker 網路
+docker network ls
+docker network inspect bridge
+
+# 看網路介面
 ip addr
-```
-![截圖 2025-04-06 下午3.31.24](https://hackmd.io/_uploads/r1sRaskAJe.png)
-> 在Host 裡執行下列指令
-```gherkin=
-docker ps -a
-# or
-docker container ls
-# c3bbf1df85f1 是之前Lab啟動的容器
-# 912511cdad8d 這個Lab啟動的容器
-```
-![截圖 2025-04-06 下午3.40.04](https://hackmd.io/_uploads/Bkz1xnJRkl.png)
-
-> 前一個Lab啟動的容器網路設定內容 
-![截圖 2025-04-06 下午3.42.33](https://hackmd.io/_uploads/BkI_ehyA1x.png)
-> 這個Lab啟動的容器網路設定內容
-![截圖 2025-04-06 下午3.42.54](https://hackmd.io/_uploads/ryTKl3yRkg.png)
-
-> 在前一個Lab啟動的容器執行
-```gherkin=
-lsns
-```
-![截圖 2025-04-06 下午3.48.56](https://hackmd.io/_uploads/S1cgznJ0kl.png)
-> 在現在啟動的容器執行
-```gherkin=
-lsns
-```
-![截圖 2025-04-06 下午3.48.03](https://hackmd.io/_uploads/HJc0bhJRJl.png)
-> 兩個容器內的 net namespace 有一樣的 id，其他 namespace 的 id 不一樣
- 
-> 兩個容器皆可 ping 8.8.8.8，表示對外連線皆正常
-![截圖 2025-04-06 下午3.53.52](https://hackmd.io/_uploads/SkaGXhJCyl.png)
-![截圖 2025-04-06 下午3.53.21](https://hackmd.io/_uploads/B1lZX3JCJg.png)
-
-> 前一個容器退出，意即刪除，第二個容器將無法連到外面網路
-![截圖 2025-04-06 下午3.56.03](https://hackmd.io/_uploads/HJlimhJ0yg.png)
-
-### Lab5 veth
-```gherkin=
 ip link list
+ip route
 
-sudo ip netns add ns0
-
-sudo ip netns add ns1
-
-ip netns list
-```
-
-```gherkin=
-sudo ip link add veth0 type veth peer name veth1
-```
-
-```gherkin=
-sudo ip link set veth0 netns ns0
-
-sudo ip link set veth1 netns ns1
-```
-
-```gherkin=
+# network namespace 操作
 sudo ip netns list
+sudo ip netns add  <name>
+sudo ip netns del  <name>
+sudo ip netns exec <name> <command>
 ```
 
-```gherkin=
-sudo ip netns exec ns0 ip addr add 172.18.0.2/24 dev veth0
+## 常見問題 FAQ
 
-sudo ip netns exec ns0 ip link set veth0 up
-```
+**Q: 為什麼 `lab2-host.sh` 在我的 Mac 上行為跟教材不同?**
+A: Docker Desktop 在 macOS 上是用 VM 跑 Docker,所以「host」是指那台 VM,不是你的 Mac。要看到原汁原味的行為,請在 Linux 上做。
 
-```gherkin=
-sudo ip netns exec ns0 ip addr
-```
-## Appendix and FAQ
+**Q: `Dockerfile-ubuntu-network` 為什麼裝了 `iproute2` 與 `iputils-ping`?**
+A: 因為 Ubuntu 22.04 的 minimal 映像沒有 `ip` 與 `ping` 指令,沒有它們就無法在容器內驗證實驗結果。
 
-:::info
-**Find this document incomplete?** Leave a comment!
-:::
+**Q: 我可以跳著做嗎?**
+A: Lab 1〜3 互相獨立,可以任意順序。Lab 4 必須先有 Lab 3 的容器在跑。Lab 5 與 Docker 無關,隨時可以做。
 
-###### tags: `Templates` `Documentation`
+**Q: 跑 Lab 5 後我的網路怪怪的?**
+A: Lab 5 只動了**新建的 namespace**,不會影響 host 主網路。只要記得 `ip netns del` 清理掉 namespace 即可。
+
+---
+
+###### tags: `Docker` `Networking` `Tutorial` `Linux Namespace`
