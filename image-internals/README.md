@@ -3,6 +3,8 @@ title: 'Docker image 內部構造工作坊'
 disqus: hackmd
 ---
 
+> ← 回到 [工作坊集索引](../README.md)
+
 # Docker image 內部構造工作坊
 
 > 一份從零開始拆解 Docker image 的實作教材。本工作坊會帶你看清楚:image 不是黑盒子,就是 **tar + JSON**。會親手用 `docker save` 解開官方 image、用 `docker import` 把任意 tar 變成 image、用 multi-stage 把 image 從幾百 MB 縮到 1 MB,最後完全跳過 Dockerfile 手動造一個 image。

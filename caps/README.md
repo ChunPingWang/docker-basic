@@ -3,6 +3,8 @@ title: 'Linux capabilities 與 user namespace 工作坊'
 disqus: hackmd
 ---
 
+> ← 回到 [工作坊集索引](../README.md)
+
 # Linux capabilities 與 user namespace 工作坊
 
 > 一份從零開始學習 **Linux capabilities** 與 **user namespace** 的實作教材。本工作坊會帶你看清楚「容器內的 root 不是真的 root」這件事:capabilities 怎麼把 root 的權力切碎、`--user` 怎麼一鍵降權、user namespace 怎麼讓 unprivileged process「假裝」當 root。

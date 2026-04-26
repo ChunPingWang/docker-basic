@@ -3,6 +3,8 @@ title: 'Docker Compose 工作坊'
 disqus: hackmd
 ---
 
+> ← 回到 [工作坊集索引](../README.md)
+
 # Docker Compose 工作坊
 
 > 一份從零學 **Docker Compose** 的實作教材。會帶你寫一個多容器 stack(nginx + redis)、看 compose 自動建的 network 與 DNS、用 healthcheck 控制啟動順序、用 named volume 做資料持久化,最後把同一份 stack 用純 `docker run` 重現一次,證明 compose 是個 YAML wrapper。

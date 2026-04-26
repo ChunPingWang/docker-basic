@@ -3,6 +3,8 @@ title: 'Linux PID namespace 與 init 工作坊'
 disqus: hackmd
 ---
 
+> ← 回到 [工作坊集索引](../README.md)
+
 # Linux PID namespace 與 init 工作坊
 
 > 一份從零開始學習 Linux **PID namespace** 與容器內 **init process** 的實作教材。本工作坊會帶你動手體驗 PID namespace 的隔離、PID 1 的特權與責任、為什麼很多容器需要 `--init`,最後不靠 Docker、純粹用 `unshare` 在 host 上做出一個 PID namespace。

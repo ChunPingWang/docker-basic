@@ -3,6 +3,8 @@ title: 'Linux cgroups 工作坊'
 disqus: hackmd
 ---
 
+> ← 回到 [工作坊集索引](../README.md)
+
 # Linux cgroups 工作坊
 
 > 一份從零開始學習 Linux **cgroups**(control groups)的實作教材。本工作坊會帶你動手體驗 Docker 三個最常用的資源限制旗標(`--memory`、`--cpus`、`--pids-limit`),看 Docker 怎麼把這些旗標翻譯成 cgroupfs 的設定,最後不靠 Docker、純粹用 `mkdir` 在 `/sys/fs/cgroup` 下做出一個會 OOM-kill 的 cgroup。

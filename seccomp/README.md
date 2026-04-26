@@ -3,6 +3,8 @@ title: 'Linux seccomp 工作坊'
 disqus: hackmd
 ---
 
+> ← 回到 [工作坊集索引](../README.md)
+
 # Linux seccomp 工作坊
 
 > 一份從零開始學習 **Linux seccomp**(secure computing mode)的實作教材。會帶你看 Docker 預設掛在每個容器上的 seccomp filter、寫自己的 JSON profile 阻擋特定 syscall、比較 ERRNO 與 KILL 兩種 action,最後解析 Docker 官方預設 profile 的內容。
