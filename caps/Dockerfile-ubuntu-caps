@@ -1,0 +1,6 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libcap2-bin iputils-ping iproute2 procps && \
+    rm -rf /var/lib/apt/lists/*
