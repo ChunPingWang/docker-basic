@@ -1,0 +1,6 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        stress-ng procps coreutils util-linux python3-minimal && \
+    rm -rf /var/lib/apt/lists/*

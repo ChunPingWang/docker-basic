@@ -1,0 +1,9 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends util-linux coreutils && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /data && \
+    echo "seeded by image at build time" > /data/seed.txt
+
+VOLUME ["/data"]
